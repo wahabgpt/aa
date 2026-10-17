@@ -318,7 +318,7 @@
     let bubble = null;
     try {
       for (let round = 0; round < 5; round++) {
-        bubble = addMsg('ai', '…');
+        bubble = addMsg('ai', '…'); startThink(bubble, round);
         const ty = typer(bubble); curTyper = ty;
         const { content, calls } = await chatOnce(history, t => ty.set(t));
         const am = { role: 'assistant', content: content }; if (calls.length) am.tool_calls = calls; history.push(am);
@@ -328,7 +328,7 @@
           const fn = tc.function || {}, nm = fn.name || '';
           const st = addMsg('tool', (TL[nm] || (READ[nm] ? 'Checking data' : 'Preparing entry')) + '…');
           const res = await runTool(nm, parseArgs(fn.arguments));
-          st.remove();
+          st.className = 'kai-m tool ' + (res && res.err ? 'fail' : 'done'); st.textContent = (res && res.err ? 'Could not finish: ' : '') + (TD[nm] || 'Done');
           history.push({ role: 'tool', content: JSON.stringify(res).slice(0, 6000) });
         }
         if (round === 4) addMsg('ai', 'I could not finish this. Please ask in a simpler way.');
@@ -359,6 +359,7 @@
 
   const TL = { get_summary: 'Reading your totals', list_customers: 'Looking through customers', get_customer: 'Opening customer account', list_stock: 'Checking stock', get_product: 'Checking product', list_bills: 'Checking bills', list_expenses: 'Reading expenses', get_sales_report: 'Adding up sales', add_customer: 'Preparing new customer', add_sale: 'Preparing sale entry', add_payment: 'Preparing payment entry', add_stock: 'Preparing stock entry', add_expense: 'Preparing expense entry' };
 
+  const TD = { get_summary: 'Read your totals', list_customers: 'Checked customers', get_customer: 'Opened customer account', list_stock: 'Checked stock', get_product: 'Checked product', list_bills: 'Checked bills', list_expenses: 'Read expenses', get_sales_report: 'Added up sales', add_customer: 'Customer step finished', add_sale: 'Sale step finished', add_payment: 'Payment step finished', add_stock: 'Stock step finished', add_expense: 'Expense step finished' };
   const css = document.createElement('style');
   css.textContent = `
 #kai-fab{position:fixed;right:16px;bottom:calc(86px + env(safe-area-inset-bottom,0px));z-index:9990;width:56px;height:56px;border-radius:50%;border:0;background:var(--accent,#111);color:var(--on-accent,#fff);box-shadow:0 8px 24px rgba(0,0,0,.28);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:transform .18s}
@@ -409,6 +410,10 @@
 .kai-set input,.kai-set select{width:100%;padding:11px;border:1px solid var(--line,#e5e5e5);border-radius:11px;font:inherit;font-size:15px;background:var(--input,#f9f9f9);color:var(--ink,#333)}
 .kai-code{display:flex;gap:6px;align-items:center;background:var(--card2,#f2f2f2);border:1px solid var(--line,#e5e5e5);border-radius:10px;padding:9px 11px;margin:6px 0;font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all}.kai-code span{flex:1}.kai-code button{border:0;background:none;cursor:pointer;color:var(--ink,#333);font-weight:800;font-size:12px}
 .kai-st{padding:10px 12px;border-radius:11px;background:var(--card2,#f2f2f2);font-weight:600;margin:8px 0}.kai-soft{color:var(--ink-soft,#777);line-height:1.55}
+.kai-th{margin-left:8px;font-size:13px;font-weight:600;color:var(--ink-soft,#777);transition:opacity .16s}.kai-m.ai:has(.kai-th){display:flex;align-items:center}
+.kai-m.tool.done,.kai-m.tool.fail{animation:kai-pop .25s;background-image:none;color:var(--ink-soft,#777)}
+.kai-m.tool.done::before,.kai-m.tool.fail::before{content:"✓";width:auto;height:auto;border:0;animation:none;font-weight:800;color:#22c55e}
+.kai-m.tool.fail::before{content:"!";color:#ef4444}
 @keyframes kai-open{from{opacity:0;transform:translateY(24px) scale(.985)}to{opacity:1;transform:none}}
 @keyframes kai-pop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
 @keyframes kai-bounce{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-5px);opacity:1}}
@@ -451,10 +456,21 @@
   const scroll = force => { if (force || logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 160) logEl.scrollTop = logEl.scrollHeight; };
   function addMsg(role, t) {
     const m = el('div', 'kai-m ' + role);
-    m.innerHTML = t === '…' ? '<span class="kai-dots"><i></i><i></i><i></i></span>' : fmt(t);
+    m.innerHTML = t === '…' ? '<span class="kai-dots"><i></i><i></i><i></i></span><span class="kai-th">Thinking…</span>' : fmt(t);
     logEl.appendChild(m); scroll(true); return m;
   }
   const note = t => addMsg('note', t);
+  const THINK = [['Thinking…', 'Understanding your question…', 'Looking at your khata…', 'Working it out…'], ['Reading the results…', 'Putting the answer together…', 'Almost ready…']];
+  function startThink(b, round) {
+    const ph = THINK[round ? 1 : 0], t0 = Date.now(), tx = b.querySelector('.kai-th'); let i = 0;
+    if (!tx) return; tx.textContent = ph[0];
+    const iv = setInterval(() => {
+      if (!b.isConnected || !b.querySelector('.kai-th')) return clearInterval(iv);
+      const s = Math.floor((Date.now() - t0) / 1000);
+      if (s > 0 && s % 2 === 0) { i = Math.min(i + 1, ph.length - 1); tx.style.opacity = 0; setTimeout(() => { tx.textContent = ph[i] + (s >= 4 ? ' ' + s + 's' : ''); tx.style.opacity = 1; }, 160); }
+      else if (s >= 4) tx.textContent = ph[i] + ' ' + s + 's';
+    }, 1000);
+  }
   function setBusy(b) { sendBtn.innerHTML = b ? I.stop : I.send; sendBtn.setAttribute('aria-label', b ? 'Stop' : 'Send'); }
   function send() { const t = inp.value.trim(); if (!t || running) return; inp.value = ''; inp.style.height = 'auto'; ask(t); }
   function stopAll() { if (abortCtl) abortCtl.abort(); if (curTyper) curTyper.stop(); }
